@@ -1,36 +1,78 @@
 # kiro-iac-sample1
 
-Kiro IDE（Vibe coding）を使って、WEB三層アーキテクチャのCloudFormationテンプレートを生成した検証サンプルです。
+Kiro IDE を使って、WEB三層アーキテクチャの CloudFormation テンプレートを生成した検証シリーズのサンプルコードです。
 
-Qiita記事「【Kiro活用】プロンプト一文で変わるIaCの品質——Well-Architected準拠を指示したらどうなるか検証してみた（第1部）」の検証コードです。
+## 連載記事
 
-## 検証概要
+| 回 | 検証テーマ |
+|---|---|
+| 第1部 | バイブコーディング × プロンプト品質の比較 |
+| 第2部 | Specモード × 仕様書品質の比較 |
 
-同じ要件に対して2パターンのプロンプトでKiroに生成させ、出力の差を比較しました。
+## Well-Architected スコア（全パターン）
 
-| | パターンA | パターンB |
-|--|----------|----------|
-| プロンプトの違い | 最小限の要件のみ | + Well-Architected準拠を指示 |
-| EC2構成 | インスタンス直接×2 | ASG + LaunchTemplate |
-| RDS Multi-AZ | 無効 | 有効 |
-| RDS暗号化 | なし | あり |
-| パスワード管理 | Parameter | Secrets Manager |
-| IAMロール | なし | SSM + CWAgent付き |
-| VPC Flow Logs | なし | あり |
-| CloudWatchアラーム | なし | あり |
+| パターン | モード | プロンプト | OE | SEC | REL | PERF | COST | SUST | 合計 |
+|---------|------|-----------|:---:|:---:|:---:|:----:|:----:|:----:|:----:|
+| pattern-1a | バイブ | 最小限 | 1 | 2 | 2 | 2 | 3 | 2 | **12/30** |
+| pattern-1b | バイブ | Well-Architected準拠を指示 | 4 | 5 | 5 | 4 | 4 | 4 | **26/30** |
+| pattern-2a | Spec | 曖昧な仕様書 | 1 | 3 | 5 | 2 | 4 | 3 | **18/30** |
+| pattern-2b | Spec | 詳細な仕様書 | 5 | 5 | 5 | 4 | 5 | 4 | **28/30** |
 
 ## ディレクトリ構成
 
 ```
 kiro-iac-sample1/
-├── README.md
-├── pattern-a/
+├── pattern-1a/           # 第1部：バイブコーディング（最小限プロンプト）
 │   ├── template.yaml
 │   └── design.md
-└── pattern-b/
-    ├── template.yaml
-    └── design.md
+├── pattern-1b/           # 第1部：バイブコーディング（WA準拠指示）
+│   ├── template.yaml
+│   └── design.md
+├── pattern-1c/           # 第1部：参考パターン
+│   ├── template.yaml
+│   └── design.md
+├── pattern-2a/           # 第2部：Specモード（曖昧な仕様書）
+│   ├── requirements.md
+│   ├── design.md
+│   ├── tasks.md
+│   └── template.yaml
+├── pattern-2b/           # 第2部：Specモード（詳細な仕様書）
+│   ├── spec-three-tier.md
+│   ├── requirements.md
+│   ├── design.md
+│   ├── tasks.md
+│   ├── template.yaml
+│   └── test_template_properties.py
+└── score_templates.py    # Well-Architected採点スクリプト（全パターン共通）
 ```
+
+## 第1部：バイブコーディング比較
+
+| | pattern-1a | pattern-1b |
+|--|:----------:|:----------:|
+| プロンプト | 最小限の要件のみ | + Well-Architected準拠を指示 |
+| EC2構成 | インスタンス直接×2 | ASG + LaunchTemplate |
+| RDS Multi-AZ | ❌ | ✅ |
+| RDS暗号化 | ❌ | ✅ |
+| パスワード管理 | Parameter | Secrets Manager |
+| IAMロール | ❌ | ✅ SSM + CWAgent |
+| VPC Flow Logs | ❌ | ✅ |
+| CloudWatchアラーム | ❌ | ✅ |
+| **WA スコア** | **12/30** | **26/30** |
+
+## 第2部：Specモード比較
+
+| | pattern-2a | pattern-2b |
+|--|:----------:|:----------:|
+| 仕様書 | 曖昧（要件のみ） | 詳細（セキュリティ・監視まで明示） |
+| EC2構成 | ASG + LaunchTemplate (t3) | ASG + LaunchTemplate (t4g Graviton) |
+| HTTPS対応 | ❌ | ✅ ACM |
+| パスワード管理 | Parameter | Secrets Manager |
+| VPC Flow Logs | ❌ | ✅ |
+| CloudWatchアラーム | ❌ | ✅ 4種 + SNS |
+| IMDSv2強制 | ❌ | ✅ |
+| EBS暗号化 | ❌ | ✅ |
+| **WA スコア** | **18/30** | **28/30** |
 
 ## 注意事項
 
