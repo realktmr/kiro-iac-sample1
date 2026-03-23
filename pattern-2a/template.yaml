@@ -1,0 +1,883 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "WEB三層アーキテクチャ (ALB → EC2 Apache → RDS MySQL 8.0) - AWS Well-Architected Framework 準拠"
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: "dev"
+    Description: "環境名（リソース命名・タグに使用）"
+
+  VpcCIDR:
+    Type: String
+    Default: "10.0.0.0/16"
+    Description: "VPC の CIDR ブロック"
+    AllowedPattern: "^(\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2}$"
+    ConstraintDescription: "CIDR 形式で入力してください（例: 10.0.0.0/16）"
+
+  EC2InstanceType:
+    Type: String
+    Default: "t4g.small"
+    Description: "EC2 インスタンスタイプ"
+
+  DBInstanceClass:
+    Type: String
+    Default: "db.t4g.small"
+    Description: "RDS インスタンスクラス"
+
+  DBName:
+    Type: String
+    Default: "appdb"
+    Description: "データベース名"
+    AllowedPattern: "^[a-zA-Z0-9]+$"
+    ConstraintDescription: "英数字のみ使用可能です"
+
+  DBMasterUsername:
+    Type: String
+    Default: "admin"
+    Description: "DB マスターユーザー名"
+    AllowedPattern: "^[a-zA-Z0-9]+$"
+    ConstraintDescription: "英数字のみ使用可能です"
+
+  NotificationEmail:
+    Type: String
+    Description: "アラーム通知先メールアドレス"
+    AllowedPattern: "^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$"
+    ConstraintDescription: "有効なメールアドレスを入力してください"
+
+  CertificateArn:
+    Type: String
+    Description: "ACM 証明書 ARN"
+    AllowedPattern: "^arn:aws:acm:[a-z0-9\\-]+:\\d{12}:certificate/[a-f0-9\\-]+$"
+    ConstraintDescription: "有効な ACM 証明書 ARN を入力してください"
+
+Resources:
+  # --- ネットワーク層 ---
+
+  # VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-vpc"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # Public Subnets
+  PublicSubnet1a:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.1.0/24"
+      AvailabilityZone: "ap-northeast-1a"
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-public-subnet-1a"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  PublicSubnet1c:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.2.0/24"
+      AvailabilityZone: "ap-northeast-1c"
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-public-subnet-1c"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # Private Subnets
+  PrivateSubnet1a:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.11.0/24"
+      AvailabilityZone: "ap-northeast-1a"
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-private-subnet-1a"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  PrivateSubnet1c:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.12.0/24"
+      AvailabilityZone: "ap-northeast-1c"
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-private-subnet-1c"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # DB Subnets
+  DBSubnet1a:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.21.0/24"
+      AvailabilityZone: "ap-northeast-1a"
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-db-subnet-1a"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  DBSubnet1c:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.22.0/24"
+      AvailabilityZone: "ap-northeast-1c"
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-db-subnet-1c"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-igw"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # NAT Gateway
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-nat-eip"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1a
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-nat-gw"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # Public Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-public-rt"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1aRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1a
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet1cRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1c
+      RouteTableId: !Ref PublicRouteTable
+
+  # Private Route Table
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-private-rt"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1aRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1a
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet1cRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1c
+      RouteTableId: !Ref PrivateRouteTable
+
+  DBSubnet1aRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DBSubnet1a
+      RouteTableId: !Ref PrivateRouteTable
+
+  DBSubnet1cRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DBSubnet1c
+      RouteTableId: !Ref PrivateRouteTable
+
+  # --- セキュリティ層 ---
+
+  # ALB Security Group
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for ALB - allows HTTP and HTTPS from internet"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-alb-sg"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # EC2 Security Group
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for EC2 instances - allows HTTP from ALB only"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-ec2-sg"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # RDS Security Group
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for RDS - allows MySQL from EC2 only"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref EC2SecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-rds-sg"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # --- ストレージ層 ---
+
+  # ALB Access Logs S3 Bucket
+  ALBAccessLogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-alb-access-logs-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-alb-access-logs"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # ALB Access Logs Bucket Policy
+  ALBAccessLogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ALBAccessLogsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowELBAccessLogs
+            Effect: Allow
+            Principal:
+              AWS: "arn:aws:iam::582318560864:root"
+            Action: s3:PutObject
+            Resource: !Sub "arn:aws:s3:::${ALBAccessLogsBucket}/AWSLogs/${AWS::AccountId}/*"
+          - Sid: AllowDeliveryLogsWrite
+            Effect: Allow
+            Principal:
+              Service: delivery.logs.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub "arn:aws:s3:::${ALBAccessLogsBucket}/AWSLogs/${AWS::AccountId}/*"
+            Condition:
+              StringEquals:
+                "s3:x-amz-acl": "bucket-owner-full-control"
+          - Sid: AllowDeliveryLogsGetBucketAcl
+            Effect: Allow
+            Principal:
+              Service: delivery.logs.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource: !Sub "arn:aws:s3:::${ALBAccessLogsBucket}"
+
+  # --- Web 層 ---
+
+  # Application Load Balancer
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: ALBAccessLogsBucketPolicy
+    Properties:
+      Name: !Sub "${EnvironmentName}-alb"
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !Ref PublicSubnet1a
+        - !Ref PublicSubnet1c
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      LoadBalancerAttributes:
+        - Key: access_logs.s3.enabled
+          Value: "true"
+        - Key: access_logs.s3.bucket
+          Value: !Ref ALBAccessLogsBucket
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-alb"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # ALB Target Group
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${EnvironmentName}-tg"
+      Protocol: HTTP
+      Port: 80
+      VpcId: !Ref VPC
+      TargetType: instance
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-tg"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # HTTPS Listener (port 443)
+  ALBHttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  # HTTP Listener (port 80 → redirect to HTTPS)
+  ALBHttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: "443"
+            StatusCode: HTTP_301
+
+  # --- IAM 層 ---
+
+  # EC2 IAM Role
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-ec2-role"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # EC2 Instance Profile
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+  # --- コンピュート層 ---
+
+  # Launch Template
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Sub "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64}}"
+        InstanceType: !Ref EC2InstanceType
+        SecurityGroupIds:
+          - !Ref EC2SecurityGroup
+        IamInstanceProfile:
+          Arn: !GetAtt EC2InstanceProfile.Arn
+        MetadataOptions:
+          HttpTokens: required
+          HttpPutResponseHopLimit: 2
+          HttpEndpoint: enabled
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeType: gp3
+              VolumeSize: 20
+              Encrypted: true
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -e
+
+            # Install Apache, PHP, php-mysqlnd
+            dnf install -y httpd php php-mysqlnd
+
+            # Start and enable httpd
+            systemctl start httpd
+            systemctl enable httpd
+
+            # Deploy index.php - DB connectivity verification page
+            cat > /var/www/html/index.php << 'PHPEOF'
+            <?php
+            $host = '${DBSecret}';
+            $user = '${DBMasterUsername}';
+            $db   = '${DBName}';
+            echo "<h1>Web Three-Tier Architecture</h1>";
+            echo "<p>Instance: " . gethostname() . "</p>";
+            echo "<p>PHP Version: " . phpversion() . "</p>";
+            try {
+                $pdo = new PDO("mysql:host=$host;dbname=$db", $user, '');
+                echo "<p>DB Connection: OK</p>";
+            } catch (PDOException $e) {
+                echo "<p>DB Connection: " . $e->getMessage() . "</p>";
+            }
+            ?>
+            PHPEOF
+
+            # Create health check endpoint for ALB
+            cat > /var/www/html/health << 'HEALTHEOF'
+            OK
+            HEALTHEOF
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub "${EnvironmentName}-web-server"
+              - Key: Environment
+                Value: !Ref EnvironmentName
+              - Key: Project
+                Value: WebThreeTier
+          - ResourceType: volume
+            Tags:
+              - Key: Name
+                Value: !Sub "${EnvironmentName}-web-server-volume"
+              - Key: Environment
+                Value: !Ref EnvironmentName
+              - Key: Project
+                Value: WebThreeTier
+      TagSpecifications:
+        - ResourceType: launch-template
+          Tags:
+            - Key: Name
+              Value: !Sub "${EnvironmentName}-launch-template"
+            - Key: Environment
+              Value: !Ref EnvironmentName
+            - Key: Project
+              Value: WebThreeTier
+
+  # --- Secrets Manager ---
+
+  # DB Secret (auto-generated password)
+  DBSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: "RDS MySQL master user credentials"
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username": "${DBMasterUsername}"}'
+        GenerateStringKey: "password"
+        PasswordLength: 32
+        ExcludeCharacters: '"''@/\'
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # --- データ層 ---
+
+  # DB Subnet Group
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: "Subnet group for RDS MySQL instance"
+      SubnetIds:
+        - !Ref DBSubnet1a
+        - !Ref DBSubnet1c
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-db-subnet-group"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # RDS MySQL Instance
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      Engine: mysql
+      EngineVersion: "8.0"
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: "20"
+      MaxAllocatedStorage: 100
+      MultiAZ: true
+      StorageEncrypted: true
+      BackupRetentionPeriod: 7
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBMasterUsername
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DBSecret}:SecretString:password}}"
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-rds"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # Auto Scaling Group
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: "2"
+      MaxSize: "4"
+      DesiredCapacity: "2"
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1a
+        - !Ref PrivateSubnet1c
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-web-server"
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: !Ref EnvironmentName
+          PropagateAtLaunch: true
+        - Key: Project
+          Value: WebThreeTier
+          PropagateAtLaunch: true
+
+  # Scaling Policy - Target Tracking (CPU 70%)
+  ScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 70
+
+  # --- ログ・監視層 ---
+
+  # CloudWatch Logs Log Group for VPC Flow Logs
+  FlowLogsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 30
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # IAM Role for VPC Flow Logs
+  FlowLogsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: FlowLogsPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                  - "logs:DescribeLogGroups"
+                  - "logs:DescribeLogStreams"
+                Resource: "*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-flow-logs-role"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # VPC Flow Logs
+  VPCFlowLogs:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      ResourceId: !Ref VPC
+      ResourceType: VPC
+      TrafficType: ALL
+      LogDestinationType: cloud-watch-logs
+      LogGroupName: !Ref FlowLogsLogGroup
+      DeliverLogsPermissionArn: !GetAtt FlowLogsRole.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-vpc-flow-logs"
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # SNS Topic for Alarm Notifications
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${EnvironmentName}-alarm-topic"
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # SNS Email Subscription
+  SNSEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref SNSTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  # --- CloudWatch アラーム ---
+
+  # EC2 CPU Utilization Alarm
+  EC2CPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: "EC2 CPU utilization exceeds 80%"
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref SNSTopic
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref AutoScalingGroup
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # RDS CPU Utilization Alarm
+  RDSCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: "RDS CPU utilization exceeds 80%"
+      Namespace: AWS/RDS
+      MetricName: CPUUtilization
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref SNSTopic
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DBInstance
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # ALB Unhealthy Host Count Alarm
+  ALBUnhealthyHostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: "ALB has unhealthy hosts"
+      Namespace: AWS/ApplicationELB
+      MetricName: UnHealthyHostCount
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref SNSTopic
+      Dimensions:
+        - Name: TargetGroup
+          Value: !GetAtt ALBTargetGroup.TargetGroupFullName
+        - Name: LoadBalancer
+          Value: !GetAtt ALB.LoadBalancerFullName
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+  # RDS Free Storage Space Alarm
+  RDSStorageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: "RDS free storage space below 5GB"
+      Namespace: AWS/RDS
+      MetricName: FreeStorageSpace
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5368709120
+      ComparisonOperator: LessThanThreshold
+      AlarmActions:
+        - !Ref SNSTopic
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DBInstance
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: WebThreeTier
+
+Outputs:
+  ALBDNSName:
+    Description: "Application access URL"
+    Value: !GetAtt ALB.DNSName
+
+  VpcId:
+    Description: "VPC ID"
+    Value: !Ref VPC
+
+  RDSEndpoint:
+    Description: "RDS endpoint address"
+    Value: !GetAtt DBInstance.Endpoint.Address
+
+  SecretsManagerArn:
+    Description: "Secrets Manager secret ARN"
+    Value: !Ref DBSecret
