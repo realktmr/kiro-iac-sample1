@@ -270,7 +270,7 @@ Resources:
                 TemplatePath: !Sub SourceArtifact::${TemplateFilePath}
                 Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM
                 RoleArn: !GetAtt CloudFormationRole.Arn
-                ParameterOverrides: '{}'
+                ParameterOverrides: !Sub '{"NotificationEmail": "${NotificationEmail}"}'
               InputArtifacts:
                 - Name: SourceArtifact
               RunOrder: 1
