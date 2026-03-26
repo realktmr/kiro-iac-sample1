@@ -892,7 +892,6 @@ Resources:
         - !Ref RDSSecurityGroup
       BackupRetentionPeriod: 7
       DeletionProtection: true
-      EnablePerformanceInsights: true
       MonitoringInterval: 60
       MonitoringRoleArn: !GetAtt RDSMonitoringRole.Arn
       CopyTagsToSnapshot: true
