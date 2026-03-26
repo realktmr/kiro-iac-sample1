@@ -1,18 +1,12 @@
 version: 0.2
 
 # 第3部検証用 buildspec.yml
-# 処理内容：
-#   1. cfn-lint で template.yaml を静的検証
-#   2. CloudFormation Change Set を作成
-#
-# 必須環境変数（CodePipeline / CodeBuild の環境変数で設定）：
-#   STACK_NAME        : 対象の CloudFormation スタック名
-#   NOTIFICATION_EMAIL: RDS/ALB アラーム通知先メール（初回デプロイ時のみ使用）
+# 処理内容：cfn-lint で template.yaml を静的検証
+# （Change Set 作成は CodePipeline の CloudFormation アクションが担当）
 
 env:
   variables:
     TEMPLATE_PATH: "pattern-3/template.yaml"
-    CHANGE_SET_NAME_PREFIX: "pipeline-changeset"
 
 phases:
   install:
@@ -22,46 +16,13 @@ phases:
       - echo "=== Installing cfn-lint ==="
       - pip install cfn-lint --quiet
 
-  pre_build:
+  build:
     commands:
       - echo "=== cfn-lint validation ==="
       - cfn-lint ${TEMPLATE_PATH}
       - echo "cfn-lint passed"
 
-  build:
-    commands:
-      - echo "=== Creating CloudFormation Change Set ==="
-      - CHANGE_SET_NAME="${CHANGE_SET_NAME_PREFIX}-$(date +%Y%m%d%H%M%S)"
-      - echo "Change Set name: ${CHANGE_SET_NAME}"
-      - |
-        aws cloudformation create-change-set \
-          --stack-name ${STACK_NAME} \
-          --template-body file://${TEMPLATE_PATH} \
-          --change-set-name ${CHANGE_SET_NAME} \
-          --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-          --parameters \
-            ParameterKey=EnvironmentName,UsePreviousValue=true \
-            ParameterKey=ProjectName,UsePreviousValue=true \
-            ParameterKey=EC2InstanceType,UsePreviousValue=true \
-            ParameterKey=RDSInstanceClass,UsePreviousValue=true \
-            ParameterKey=RDSAllocatedStorage,UsePreviousValue=true \
-            ParameterKey=NotificationEmail,UsePreviousValue=true
-      - echo "=== Waiting for Change Set to be created ==="
-      - |
-        aws cloudformation wait change-set-create-complete \
-          --stack-name ${STACK_NAME} \
-          --change-set-name ${CHANGE_SET_NAME}
-      - echo "Change Set created successfully"
-      - echo "=== Change Set summary ==="
-      - |
-        aws cloudformation describe-change-set \
-          --stack-name ${STACK_NAME} \
-          --change-set-name ${CHANGE_SET_NAME} \
-          --query 'Changes[*].ResourceChange.{Action:Action,Resource:LogicalResourceId,Type:ResourceType}' \
-          --output table
-      - echo "CHANGE_SET_NAME=${CHANGE_SET_NAME}" > changeset.env
-
 artifacts:
   files:
-    - changeset.env
-  discard-paths: yes
+    - pattern-3/template.yaml
+  discard-paths: no
