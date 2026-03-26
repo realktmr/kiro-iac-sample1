@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "cfn-lint on template.yaml save",
+  "description": "template.yaml を保存したとき cfn-lint を自動実行し、CloudFormation の構文エラーをエディタ上で即座にフィードバックする",
+  "version": "1",
+  "when": {
+    "type": "fileSaved",
+    "patterns": ["**/template.yaml"]
+  },
+  "then": {
+    "type": "shellCommand",
+    "command": "cfn-lint \"${file}\""
+  }
+}
