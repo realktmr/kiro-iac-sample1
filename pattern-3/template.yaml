@@ -588,6 +588,7 @@ Resources:
   ALBAccessLogBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Sub '${EnvironmentName}-${ProjectName}-alb-logs-${AWS::AccountId}'
       BucketEncryption:
@@ -703,7 +704,7 @@ Resources:
     Properties:
       LaunchTemplateName: !Sub '${EnvironmentName}-${ProjectName}-lt'
       LaunchTemplateData:
-        ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64}}'
+        ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64}}'
         InstanceType: !Ref EC2InstanceType
         IamInstanceProfile:
           Arn: !GetAtt EC2InstanceProfile.Arn
@@ -720,7 +721,7 @@ Resources:
               Encrypted: true
               DeleteOnTermination: true
         UserData:
-          Fn::Base64: !Sub |
+          Fn::Base64: |
             #!/bin/bash
             yum update -y
             yum install -y httpd amazon-cloudwatch-agent
@@ -807,6 +808,7 @@ Resources:
   RDSKMSKey:
     Type: AWS::KMS::Key
     DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       Description: !Sub 'KMS key for RDS encryption - ${EnvironmentName}-${ProjectName}'
       EnableKeyRotation: true
@@ -875,6 +877,7 @@ Resources:
   RDSInstance:
     Type: AWS::RDS::DBInstance
     DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
     Properties:
       DBInstanceIdentifier: !Sub '${EnvironmentName}-${ProjectName}-rds'
       Engine: mysql
