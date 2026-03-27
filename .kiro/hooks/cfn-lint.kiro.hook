@@ -1,14 +1,14 @@
 {
   "enabled": true,
-  "name": "cfn-lint on template.yaml save",
-  "description": "template.yaml を保存したとき cfn-lint を自動実行し、CloudFormation の構文エラーをエディタ上で即座にフィードバックする",
+  "name": "cfn-lint on save",
+  "description": "template.yaml 保存時に cfn-lint を自動実行してエラーを即座にフィードバック",
   "version": "1",
   "when": {
-    "type": "fileSaved",
+    "type": "fileEdited",
     "patterns": ["**/template.yaml"]
   },
   "then": {
-    "type": "shellCommand",
-    "command": "cfn-lint \"${file}\""
+    "type": "askAgent",
+    "prompt": "編集中の template.yaml を cfn-lint で検証してください。エラーや警告があれば内容・行番号・修正方法を日本語で報告してください。問題がなければその旨を日本語で報告してください。"
   }
 }

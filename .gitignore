@@ -13,6 +13,9 @@ build/
 .vscode/
 .idea/
 
+# Python virtual environment
+.venv/
+
 # OS
 .DS_Store
 Thumbs.db
