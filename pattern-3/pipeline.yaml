@@ -214,6 +214,14 @@ Resources:
     Properties:
       Name: kiro-blog-pipeline
       PipelineType: V2
+      Triggers:
+        - ProviderType: CodeStarSourceConnection
+          GitConfiguration:
+            SourceActionName: GitHub
+            Push:
+              - Branches:
+                  Includes:
+                    - !Ref GitHubBranch
       RoleArn: !GetAtt CodePipelineRole.Arn
       ArtifactStore:
         Type: S3
@@ -233,7 +241,7 @@ Resources:
                 FullRepositoryId: !Sub ${GitHubOwner}/${GitHubRepo}
                 BranchName: !Ref GitHubBranch
                 OutputArtifactFormat: CODE_ZIP
-                DetectChanges: true
+                DetectChanges: false
               OutputArtifacts:
                 - Name: SourceArtifact
               RunOrder: 1
