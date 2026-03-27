@@ -1,4 +1,5 @@
 # kiro-iac-sample1
+<!-- auto-trigger final test -->
 
 Kiro IDE を使って、WEB三層アーキテクチャの CloudFormation テンプレートを生成した検証シリーズのサンプルコードです。
 
