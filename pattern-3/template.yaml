@@ -1,4 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
+# auto-trigger test
 Description: >-
   Well-Architected 3層アーキテクチャ CloudFormation テンプレート。
   ALB（プレゼンテーション層）→ EC2 Apache Auto Scaling（アプリケーション層）→ RDS MySQL 8.0 Multi-AZ（データ層）の
