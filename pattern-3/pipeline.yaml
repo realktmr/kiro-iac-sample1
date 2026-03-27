@@ -27,18 +27,12 @@ Parameters:
     Type: String
     Default: pattern-3/template.yaml
     Description: Path to the CloudFormation template in the repository
+  GitHubConnectionArn:
+    Type: String
+    Default: arn:aws:codeconnections:ap-northeast-1:881815938679:connection/440e1c79-1b6c-4e55-8d4f-017c0627860e
+    Description: CodeConnections ARN (GitHub App インストール済みの接続)
 
 Resources:
-
-  # -------------------------------------------------------
-  # CodeConnections - GitHub 接続
-  # 作成後にコンソールで手動アクティベートが必要
-  # -------------------------------------------------------
-  GitHubConnection:
-    Type: AWS::CodeStarConnections::Connection
-    Properties:
-      ConnectionName: kiro-blog-github
-      ProviderType: GitHub
 
   # -------------------------------------------------------
   # S3 - パイプライン アーティファクトバケット
@@ -129,7 +123,7 @@ Resources:
               - Sid: CodeConnections
                 Effect: Allow
                 Action: codestar-connections:UseConnection
-                Resource: !Ref GitHubConnection
+                Resource: !Ref GitHubConnectionArn
 
   # -------------------------------------------------------
   # IAM ロール - CodeBuild（cfn-lint のみ、AWS API 不要）
@@ -237,7 +231,7 @@ Resources:
                 Provider: CodeStarSourceConnection
                 Version: '1'
               Configuration:
-                ConnectionArn: !Ref GitHubConnection
+                ConnectionArn: !Ref GitHubConnectionArn
                 FullRepositoryId: !Sub ${GitHubOwner}/${GitHubRepo}
                 BranchName: !Ref GitHubBranch
                 OutputArtifactFormat: CODE_ZIP
@@ -320,9 +314,3 @@ Outputs:
   PipelineConsoleUrl:
     Value: !Sub https://${AWS::Region}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${Pipeline}/view
     Description: CodePipeline コンソール URL
-
-  GitHubConnectionArn:
-    Value: !Ref GitHubConnection
-    Description: >-
-      スタック作成後、この接続を手動でアクティベートしてください。
-      Settings > Connections > kiro-blog-github > 接続を更新
