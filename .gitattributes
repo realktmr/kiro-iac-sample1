@@ -1,0 +1,17 @@
+# 改行コードをリポジトリでは LF に統一
+* text=auto eol=lf
+
+# YAML は必ず LF（CloudFormation コンソールの文字化け対策）
+*.yaml text eol=lf
+*.yml  text eol=lf
+
+# JSON も LF
+*.json text eol=lf
+
+# Python も LF
+*.py text eol=lf
+
+# バイナリファイルはそのまま
+*.png binary
+*.jpg binary
+*.gif binary
