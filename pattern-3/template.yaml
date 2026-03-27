@@ -881,7 +881,7 @@ Resources:
     Properties:
       DBInstanceIdentifier: !Sub '${EnvironmentName}-${ProjectName}-rds'
       Engine: mysql
-      EngineVersion: '8.0.40'
+      EngineVersion: '8.0.44'
       DBInstanceClass: !Ref RDSInstanceClass
       AllocatedStorage: !Ref RDSAllocatedStorage
       StorageType: gp3
