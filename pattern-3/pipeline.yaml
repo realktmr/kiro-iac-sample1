@@ -213,6 +213,7 @@ Resources:
     Type: AWS::CodePipeline::Pipeline
     Properties:
       Name: kiro-blog-pipeline
+      PipelineType: V2
       RoleArn: !GetAtt CodePipelineRole.Arn
       ArtifactStore:
         Type: S3
