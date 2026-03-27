@@ -669,7 +669,7 @@ Resources:
       HealthCheckEnabled: true
       HealthCheckPath: /
       HealthCheckProtocol: HTTP
-      HealthCheckIntervalSeconds: 20
+      HealthCheckIntervalSeconds: 30
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 3
       UnhealthyThresholdCount: 3
